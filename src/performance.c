@@ -4,7 +4,7 @@
 #include "startup.h"
 #include "performance.h"
 
-#if defined(RPI3)
+#if defined(RPI3) || defined(RPI4)
 
 const char * type_names[] = {
 
@@ -127,7 +127,7 @@ const char * type_names[] = {
 const char *type_lookup(int type) {
    static const char *UNKNOWN = "UNKNOWN";
    int num_types = sizeof(type_names) / sizeof(type_names[0]);
-   if (type >= 0 || type < num_types) {
+   if (type >= 0 && type < num_types) {
       return type_names[type];
    } else {
       return UNKNOWN;
@@ -144,9 +144,9 @@ void reset_performance_counters(perf_counters_t *pct) {
    unsigned ctrl = 0x0F;
    
 
-#if defined(RPI2) || defined(RPI3)
+#if defined(RPI2) || defined(RPI3) || defined(RPI4)
    int i;
-   unsigned cntenset = (1 << 31);
+   unsigned cntenset = (1U << 31);
 
    unsigned type_impl;
 
@@ -179,7 +179,7 @@ void reset_performance_counters(perf_counters_t *pct) {
 }
 
 void read_performance_counters(perf_counters_t *pct) {
-#if defined(RPI2) || defined(RPI3)
+#if defined(RPI2) || defined(RPI3) || defined(RPI4)
    int i;
    for (i = 0; i < pct->num_counters; i++) {
       // Select the event count/type via the event type selection register
@@ -196,16 +196,32 @@ void read_performance_counters(perf_counters_t *pct) {
 #endif
 }
 
-void print_performance_counters(perf_counters_t *pct) {
+static char bfr[20+1];
+
+static char* uint64ToDecimal(uint64_t v) {
+   int first = 1;
+   char* p = bfr + sizeof(bfr);
+   *(--p) = '\0';
+   while (v || first) {
+      *(--p) = '0' + v % 10;
+      v = v / 10;
+      first = 0;
+   }
+   return p;
+}
+
+void print_performance_counters(const perf_counters_t *pct) {
    int i;
    uint64_t cycle_counter = pct->cycle_counter;
    cycle_counter *= 64;
-   printf("%26s = %"PRIu64"\r\n", "cycle counter", cycle_counter);
+   // newlib-nano doesn't appear to support 64-bit printf/scanf on 32-bit systems
+   // printf("%26s = %"PRIu64"\r\n", "cycle counter", cycle_counter);
+   printf("%26s = %s\r\n", "cycle counter", uint64ToDecimal(cycle_counter));
    for (i = 0; i < pct->num_counters; i++) {
       printf("%26s = %u\r\n", type_lookup(pct->type[i]), pct->counter[i]);
    }
 }
-
+#ifdef BENCHMARK
 int benchmark() {
    int i;
    int total;
@@ -213,8 +229,8 @@ int benchmark() {
    perf_counters_t pct;
    unsigned char mem1[1024*1024];
    unsigned char mem2[1024*1024];
-
-#if defined(RPI2) || defined(RPI3) 
+   mem2[0]=0;
+#if defined(RPI2) || defined(RPI3) || defined(RPI4)
    pct.num_counters = 6;
    pct.type[0] = PERF_TYPE_L1I_CACHE;
    pct.type[1] = PERF_TYPE_L1I_CACHE_REFILL;
@@ -273,3 +289,4 @@ int benchmark() {
 
    return total;
 }
+#endif

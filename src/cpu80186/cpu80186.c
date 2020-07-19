@@ -41,6 +41,12 @@
 #include "cpu80186.h"
 #include "mem80186.h"
 #include "iop80186.h"
+#include "../tube.h"
+
+#ifdef INCLUDE_DEBUGGER
+#include "cpu80186_debug.h"
+#include "../cpu_debug.h"
+#endif
 
 uint64_t curtimer, lasttimer, timerfreq;
 
@@ -94,6 +100,20 @@ void intcall86(uint8_t intnum);
 	df = (temp16 >> 10) & 1; \
 	of = (temp16 >> 11) & 1; \
 }
+
+#ifdef INCLUDE_DEBUGGER
+uint32_t getinstraddr86() {
+   return segbase(savecs) + saveip;
+}
+
+uint16_t getflags86() {
+   return makeflagsword();
+}
+
+void putflags86(uint16_t value) {
+   decodeflagsword(value);
+}
+#endif
 
 #ifdef TRACE_N
 extern int i386_dasm_one();
@@ -793,7 +813,7 @@ uint8_t op_grp2_8(uint8_t cnt)
   uint16_t msb;
 
   s = oper1b;
-  oldcf = cf;
+  
 #ifdef CPU_V20 //80186/V20 class CPUs limit shift count to 31
   cnt &= 0x1F;
 #endif
@@ -943,7 +963,7 @@ uint16_t op_grp2_16(uint8_t cnt)
   uint32_t msb;
 
   s = oper1;
-  oldcf = cf;
+
 #ifdef CPU_V20 //80186/V20 class CPUs limit shift count to 31
   cnt &= 0x1F;
 #endif
@@ -1121,7 +1141,7 @@ void op_idiv8(uint16_t valdiv, uint8_t divisor)
   s2 = divisor;
   sign = (((s1 ^ s2) & 0x8000) != 0);
   s1 = (s1 < 0x8000) ? s1 : ((~s1 + 1) & 0xffff);
-  s2 = (s2 < 0x8000) ? s2 : ((~s2 + 1) & 0xffff);
+  //s2 = (s2 < 0x8000) ? s2 : ((~s2 + 1) & 0xffff); //always true
   d1 = s1 / s2;
   d2 = s1 % s2;
   if (d1 & 0xFF00)
@@ -1266,8 +1286,8 @@ void op_idiv16(uint32_t valdiv, uint16_t divisor)
   s2 = divisor;
   s2 = (s2 & 0x8000) ? (s2 | 0xffff0000) : s2;
   sign = (((s1 ^ s2) & 0x80000000) != 0);
-  s1 = (s1 < 0x80000000) ? s1 : ((~s1 + 1) & 0xffffffff);
-  s2 = (s2 < 0x80000000) ? s2 : ((~s2 + 1) & 0xffffffff);
+  s1 = (s1 < 0x80000000) ? s1 : (~s1 + 1);
+  s2 = (s2 < 0x80000000) ? s2 : (~s2 + 1);
   d1 = s1 / s2;
   d2 = s1 % s2;
   if (d1 & 0xFFFF0000)
@@ -1472,7 +1492,7 @@ void reset(void)
   segregs[regcs] = 0xF000;
 }
 
-void exec86(uint32_t execloops)
+void exec86(uint32_t tube_cycles)
 {
   uint8_t docontinue;
   static uint16_t firstip;
@@ -1488,8 +1508,7 @@ void exec86(uint32_t execloops)
   }
 #endif
 
-  while (execloops--)
-  {
+  do {
     if (trap_toggle)
     {
       intcall86(1);
@@ -1520,6 +1539,14 @@ void exec86(uint32_t execloops)
       savecs = segregs[regcs];
       saveip = ip;
       opcode = getmem8(segregs[regcs], ip);
+
+#ifdef INCLUDE_DEBUGGER
+      if (cpu80186_debug_enabled)
+      {
+         debug_preexec(&cpu80186_cpu_debug, segbase(savecs) + saveip);
+      }
+#endif
+
 #ifdef TRACE_N
       trace_instruction(savecs, saveip);
 #endif
@@ -3775,5 +3802,6 @@ void exec86(uint32_t execloops)
         }
         break;
       }
-    }
+    tubeUseCycles(1); 
+    }while (tubeContinueRunning());
   }

@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "arm.h"
+#include "../tube.h"
 
 // #define TRACE 1
 
@@ -28,6 +29,11 @@
 darm_t d;
 darm_str_t str;
 int m_trace;
+#endif
+
+#ifdef INCLUDE_DEBUGGER
+#include "arm_debug.h"
+#include "../cpu_debug.h"
 #endif
 
 //int    m_icount;
@@ -87,12 +93,12 @@ eR0, eR1, eR2, eR3, eR4, eR5, eR6, eR7, eR8, eR9, eR10, eR11, eR12, eR13_SVC, eR
 #define I_BIT   27
 #define F_BIT   26
 
-#define N_MASK  ((UINT32)(1<<N_BIT)) /* Negative flag */
-#define Z_MASK  ((UINT32)(1<<Z_BIT)) /* Zero flag */
-#define C_MASK  ((UINT32)(1<<C_BIT)) /* Carry flag */
-#define V_MASK  ((UINT32)(1<<V_BIT)) /* oVerflow flag */
-#define I_MASK  ((UINT32)(1<<I_BIT)) /* Interrupt request disable */
-#define F_MASK  ((UINT32)(1<<F_BIT)) /* Fast interrupt request disable */
+#define N_MASK  ((UINT32)(1U<<N_BIT)) /* Negative flag */
+#define Z_MASK  ((UINT32)(1U<<Z_BIT)) /* Zero flag */
+#define C_MASK  ((UINT32)(1U<<C_BIT)) /* Carry flag */
+#define V_MASK  ((UINT32)(1U<<V_BIT)) /* oVerflow flag */
+#define I_MASK  ((UINT32)(1U<<I_BIT)) /* Interrupt request disable */
+#define F_MASK  ((UINT32)(1U<<F_BIT)) /* Fast interrupt request disable */
 
 #define N_IS_SET(pc)    ((pc) & N_MASK)
 #define Z_IS_SET(pc)    ((pc) & Z_MASK)
@@ -115,7 +121,7 @@ eR0, eR1, eR2, eR3, eR4, eR5, eR6, eR7, eR8, eR9, eR10, eR11, eR12, eR13_SVC, eR
 
 #define R15                     m_sArmRegister[eR15]
 #define MODE                    (R15&0x03)
-#define SIGN_BIT                ((UINT32)(1<<31))
+#define SIGN_BIT                ((UINT32)(1U<<31))
 #define SIGN_BITS_DIFFER(a,b)   (((a)^(b)) >> 31)
 
 /* Deconstructing an instruction */
@@ -263,7 +269,7 @@ void arm2_device_reset()
 #endif
 }
 
-void arm2_execute_run(int number)
+void arm2_execute_run(int tube_cycles)
 {
 #ifdef TRACE
   int i;
@@ -278,6 +284,12 @@ void arm2_execute_run(int number)
 
     /* load instruction */
     pc = R15;
+#ifdef INCLUDE_DEBUGGER
+      if (arm2_debug_enabled)
+      {
+         debug_preexec(&arm2_cpu_debug, pc & ADDRESS_MASK);
+      }
+#endif
     insn = cpu_read32( pc & ADDRESS_MASK );
 
 #ifdef TRACE
@@ -413,9 +425,10 @@ void arm2_execute_run(int number)
 
     //arm2_check_irq_state();
 
-  }
+    tubeUseCycles(1); 
+    } while (tubeContinueRunning());
   //while( m_icount > 0 );
-  while (number--);
+  //while (number--);
 } /* arm_execute */
 
 void arm2_check_irq_state()
@@ -743,7 +756,7 @@ void HandleALU(UINT32 insn)
     if ((rn = (insn & INSN_RN) >> INSN_RN_SHIFT) == eR15)
     {
       if (ARM_DEBUG_CORE)
-        logerror("%08x:  Pipelined R15 (Shift %d)\n", R15,(insn&INSN_I?8:insn&0x10u?12:12));
+        logerror("%08x:  Pipelined R15 (Shift %d)\n", R15,(insn&INSN_I?8:12));
 
         /* Docs strongly suggest the mode bits should be included here, but it breaks Captain
          America, as it starts doing unaligned reads */
@@ -934,7 +947,7 @@ int loadInc(UINT32 pat, UINT32 rbv, UINT32 s)
           SetRegister(15, (R15&PSR_MASK) | (R15&IRQ_MASK) | (R15&MODE_MASK) | ((cpu_read32(rbv+=4))&ADDRESS_MASK) );
         }
         else
-        SetRegister( i, cpu_read32(rbv+=4) );
+          SetRegister( i, cpu_read32(rbv+=4) );
 
         result++;
       }
@@ -959,12 +972,12 @@ int loadDec(UINT32 pat, UINT32 rbv, UINT32 s, UINT32* deferredR15, int* defer)
         else
           /* Pull only address, preserve mode & status flags */
           *deferredR15 = (R15&PSR_MASK) | (R15&IRQ_MASK) | (R15&MODE_MASK) | ((cpu_read32(rbv-=4))&ADDRESS_MASK);
-        }
-        else
-        SetRegister( i, cpu_read32(rbv -=4) );
-        result++;
       }
-    }
+      else
+        SetRegister( i, cpu_read32(rbv -=4) );
+      result++;
+    } 
+  }
   return result;
 }
 
@@ -1239,16 +1252,16 @@ UINT32 decodeShift(UINT32 insn, UINT32 *pCarry)
       }
       else
       {
-        if (pCarry) *pCarry = (rm & (1 << (k - 1)));
+        if (pCarry) *pCarry = (rm & (1U << (k - 1)));
         return LSR(rm, k);
       }
 
       case 2: /* ASR */
       if (k == 0 || k > 32)
-      k = 32;
-      if (pCarry) *pCarry = (rm & (1 << (k - 1)));
+        k = 32;
+      if (pCarry) *pCarry = (rm & (1U << (k - 1)));
       if (k >= 32)
-      return (rm & SIGN_BIT) ? 0xffffffffu : 0;
+        return (rm & SIGN_BIT) ? 0xffffffffu : 0;
       else
       {
         if (rm & SIGN_BIT)

@@ -74,7 +74,7 @@ Environment_type *env = &defaultEnvironment;
  ***********************************************************/
 
 // Note: this will be executed in user mode
-static void defaultErrorHandler(ErrorBuffer_type *eb) {
+static void defaultErrorHandler(const ErrorBuffer_type *eb) {
   // TODO: Consider resetting the user stack?
   if (DEBUG_ARM) {
     printf("Error = %p %02x %s\r\n", eb->errorAddr, eb->errorBlock.errorNum, eb->errorBlock.errorMsg);
@@ -192,8 +192,8 @@ static void initEnv() {
   env->handler[                 UPCALL_HANDLER].handler = defaultUpcallHandler;
 
   // Handlers where the handler is just data
-  env->handler[           MEMORY_LIMIT_HANDLER].handler = (EnvironmentHandler_type) (2 * 1024 * 1024);
-  env->handler[      APPLICATION_SPACE_HANDLER].handler = (EnvironmentHandler_type) (3 * 1024 * 1024);
+  env->handler[           MEMORY_LIMIT_HANDLER].handler = (EnvironmentHandler_type) (16 * 1024 * 1024);
+  env->handler[      APPLICATION_SPACE_HANDLER].handler = (EnvironmentHandler_type) (16 * 1024 * 1024);
   env->handler[CURRENTLY_ACTIVE_OBJECT_HANDLER].handler = (EnvironmentHandler_type) (0);
 }
 

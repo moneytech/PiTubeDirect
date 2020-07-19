@@ -2,7 +2,7 @@
  * 6502 Co Processor Emulation
  *
  * (c) 2016 David Banks and Ed Spittles
- * 
+ *
  * based on code by
  * - Reuben Scratton.
  * - Tom Walker
@@ -11,12 +11,14 @@
 
 #include <stdio.h>
 #include <string.h>
+#include "tube-client.h"
 #include "tube-defs.h"
 #include "tube.h"
 #include "tube-ula.h"
 #include "tuberom_6502.h"
 #include "programs.h"
 #include "copro-65tube.h"
+#include "cache.h"
 
 #ifdef HISTOGRAM
 
@@ -38,16 +40,22 @@ void copro_65tube_dump_histogram() {
 
 #endif
 
-static void copro_65tube_poweron_reset(unsigned char mpu_memory[]) {
+static unsigned char *copro_65tube_poweron_reset(void) {
    // Wipe memory
-   memset(mpu_memory, 0, 0xF800); // only need to goto 0xF800 as rom will be put in later 
+   unsigned char * mpu_memory;
+   mpu_memory = copro_mem_reset(0xF800); // only need to goto 0xF800 as rom will be put in later
    // Install test programs (like sphere)
    copy_test_programs(mpu_memory);
+   return mpu_memory;
 }
 
 static void copro_65tube_reset(unsigned char mpu_memory[]) {
    // Re-instate the Tube ROM on reset
-   memcpy(mpu_memory + 0xf800, tuberom_6502_orig, 0x800);
+   if (copro == COPRO_65TUBE_0 || copro == COPRO_65TUBE_1) {
+      memcpy(mpu_memory + 0xf800, tuberom_6502_extern_1_10, 0x800);
+   } else {
+      memcpy(mpu_memory + 0xf800, tuberom_6502_intern_1_10, 0x800);
+   }
    // Wait for rst become inactive before continuing to execute
    tube_wait_for_rst_release();
 }
@@ -57,21 +65,35 @@ void copro_65tube_emulator() {
    int last_copro = copro;
   // unsigned char *addr;
    //__attribute__ ((aligned (64*1024))) unsigned char mpu_memory[64*1024]; // allocate the amount of ram
-   unsigned char * mpu_memory = 0; // now the arm vectors have moved we can set the core memory to start at 0
-   copro_65tube_poweron_reset(mpu_memory);
+   unsigned char * mpu_memory; // now the arm vectors have moved we can set the core memory to start at 0
+   unsigned int i;
+   // When the 65tube co pro on a single core system, switch to the alternative FIQ handler
+   // that flag events from the ISR using the ip register
+
+   mpu_memory = copro_65tube_poweron_reset();
    copro_65tube_reset(mpu_memory);
+
+     // Make page 64K point to page 0 so that accesses LDA 0xFFFF, X work without needing masking
+  map_4k_page(16, 0);
 
    while (copro == last_copro) {
 #ifdef HISTOGRAM
       copro_65tube_init_histogram();
 #endif
       tube_reset_performance_counters();
-      exec_65tube(mpu_memory, copro == COPRO_65TUBE_1 ? 1 : 0);
+      // Copro 0/2 runs at full speed, Copro 1/3 run at specificed slower speed
+      exec_65tube(mpu_memory, (copro == COPRO_65TUBE_1 || copro == COPRO_65TUBE_3) ? 1 : 0);
+
       tube_log_performance_counters();
 #ifdef HISTOGRAM
       copro_65tube_dump_histogram();
 #endif
       copro_65tube_reset(mpu_memory);
    }
-}
 
+   // restore memory mapping
+
+   for ( i= 0 ; i<=16; i++ )
+     map_4k_page(i, i);
+
+}

@@ -3,7 +3,7 @@
 #ifndef PERFORMANCE_H
 #define PERFORMANCE_H
 
-#if defined(RPI3) ||  defined(RPI2)
+#if defined(RPI3) ||  defined(RPI2) || defined(RPI4)
 
 // TODO - More work is needed on the RPI2 performance metrics
 
@@ -78,14 +78,14 @@ typedef struct {
    unsigned cycle_counter;
    int num_counters;
    int type[MAX_COUNTERS];
-   unsigned counter[MAX_COUNTERS];;
+   unsigned counter[MAX_COUNTERS];
 } perf_counters_t;
 
 extern void reset_performance_counters(perf_counters_t *pct);
 
 extern void read_performance_counters(perf_counters_t *pct);
 
-extern void print_performance_counters(perf_counters_t *pct);
+extern void print_performance_counters(const perf_counters_t *pct);
 
 extern int benchmark();
 
